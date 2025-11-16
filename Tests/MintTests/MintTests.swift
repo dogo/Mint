@@ -308,4 +308,42 @@ class MintTests: XCTestCase {
         XCTAssertEqual(try mint.listPackages(), [:])
         XCTAssertEqual(try mint.readMetadata().packages, [:])
     }
+    
+    func testUninstallSpecificVersionRemovesOnlyThatVersionAndLinks() throws {
+        let globalPath = mint.linkPath + testCommand
+        // Use versions that exist in the test fixtures/repo
+        let packageOne = PackageReference(repo: testRepo, version: testVersion)
+        let packageTwo = PackageReference(repo: testRepo, version: latestVersion)
+
+        // install two versions
+        try mint.install(package: packageOne, link: true)
+        try mint.install(package: packageTwo, link: true)
+
+        // check everything expected is there
+        // installing and linking the newer version should update the symlink
+        XCTAssertTrue(globalPath.exists)
+        XCTAssertEqual(mint.getLinkedExecutables(), [expectedExecutablePath(latestVersion)])
+        XCTAssertEqual(try mint.listPackages(), [fullTestRepo: [testVersion, latestVersion]])
+        XCTAssertEqual(try mint.readMetadata().packages, [fullTestRepo: testPackageDir])
+
+        // Perform uninstall for specific version
+        try mint.uninstall(name: testRepo, version: "4.0.0")
+
+        // Assert: older version removed, newer version still present
+        XCTAssertFalse((mintPath + "packages" + testPackageDir + "build" + testVersion).exists, "Requested version should be removed")
+        XCTAssertTrue((mintPath + "packages" + testPackageDir + "build" + latestVersion).exists, "Other versions should remain")
+
+        // Symlink should still exist and point to the remaining (newer) version
+        XCTAssertTrue(globalPath.exists)
+        XCTAssertEqual(mint.getLinkedExecutables(), [expectedExecutablePath(latestVersion)])
+
+        // Metadata should still contain the package because a version remains
+        let metadataData = try (mintPath + "metadata.json").read()
+        if let meta = try JSONSerialization.jsonObject(with: metadataData, options: []) as? [String: Any],
+           let packages = meta["packages"] as? [String: String] {
+            XCTAssertEqual(packages[fullTestRepo], testPackageDir, "Metadata mapping should still exist when package has remaining versions")
+        } else {
+            XCTFail("metadata.json could not be parsed")
+        }
+    }
 }

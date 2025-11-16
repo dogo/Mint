@@ -584,7 +584,11 @@ public class Mint {
         }
     }
     
-    public func uninstall(name: String) throws {
+    /// Uninstall a package entirely or a specific installed version.
+    /// - Parameters:
+    ///   - name: The package name (or a case-insensitive substring of the git repo)
+    ///   - version: Optional specific version to uninstall. If nil, all installed versions are removed.
+    public func uninstall(name: String, version: String? = nil) throws {
 
         // find packages
         var metadata = try readMetadata()
@@ -592,7 +596,7 @@ public class Mint {
         let cache = try Cache(path: packagesPath, metadata: metadata, linkedExecutables: linkedExecutables)
         let packages = cache.packages.filter { $0.gitRepo.lowercased().contains(name.lowercased()) }
 
-        // remove package
+        // select package to operate on
         let package: Cache.PackageInfo
         switch packages.count {
         case 0:
@@ -605,27 +609,67 @@ public class Mint {
             package = packages.first { $0.gitRepo == option }!
         }
 
-        // get resources across all installed versions
+        // determine which version dirs to delete
+        let versionDirsToDelete: [Cache.VersionDir]
+        if let version = version {
+            // try exact match first
+            let matches = package.versionDirs.filter { $0.version == version }
+            if matches.isEmpty {
+                // fallback: contains (helps when user passes just a short sha / partial)
+                let fuzzy = package.versionDirs.filter { $0.version.contains(version) }
+                if fuzzy.isEmpty {
+                    errorOutput("Version '\(version)' for package \(package.name) was not found".red)
+                    return
+                } else {
+                    versionDirsToDelete = fuzzy
+                }
+            } else {
+                versionDirsToDelete = matches
+            }
+        } else {
+            versionDirsToDelete = package.versionDirs
+        }
+
+        // get resources for the versions we will remove
         let resources = Set(
-            try package.versionDirs
+            try versionDirsToDelete
                 .map { try getResources(from: $0.path) }
                 .flatMap { $0 }
         )
 
-        try package.path.delete()
-        output("\(package.name) was uninstalled")
+        // delete the selected version directories
+        for vd in versionDirsToDelete {
+            try vd.path.delete()
+        }
 
-        // remove metadata
-        metadata.packages[package.gitRepo] = nil
-        try writeMetadata(metadata)
+        // check if any version directories remain under build path
+        let buildPath = package.path + "build"
+        let remainingVersionDirs = (try? buildPath.children()
+            .filter { $0.isDirectory && !$0.lastComponent.hasPrefix(".") }
+            .map { $0.lastComponent }) ?? []
+        let removedAllVersions = remainingVersionDirs.isEmpty
 
-        // remove link
-        for executable in Set(package.versionDirs.flatMap { $0.executables }) where executable.linked {
+        if removedAllVersions {
+            // fully removed package; ensure package path cleanup and metadata update
+            try package.path.delete()
+            output("\(package.name) was uninstalled")
+            // remove metadata entry
+            metadata.packages[package.gitRepo] = nil
+            try writeMetadata(metadata)
+        } else {
+            // only specific version(s) removed
+            let removedVersionsList = versionDirsToDelete.map { $0.version }.joined(separator: ", ")
+            output("\(package.name) (\(removedVersionsList)) was uninstalled")
+            // metadata remains unchanged because package still has installed versions
+        }
+
+        // remove links for executables belonging to removed versions
+        for executable in Set(versionDirsToDelete.flatMap { $0.executables }) where executable.linked {
             let installPath = linkPath + executable.name
             try installPath.delete()
         }
 
-        // remove all resource artifact links
+        // remove resource artifact links related only to removed versions
         for resource in resources {
             let installPath = linkPath + resource.lastComponent
             try installPath.delete()
