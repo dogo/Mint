@@ -13,6 +13,6 @@ class UninstallCommand: MintCommand {
 
     override func execute() throws {
         try super.execute()
-        try mint.uninstall(name: package)
+        try mint.uninstall(name: package, version: version)
     }
 }
