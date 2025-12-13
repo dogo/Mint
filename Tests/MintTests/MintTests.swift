@@ -338,12 +338,6 @@ class MintTests: XCTestCase {
         XCTAssertEqual(mint.getLinkedExecutables(), [expectedExecutablePath(latestVersion)])
 
         // Metadata should still contain the package because a version remains
-        let metadataData = try (mintPath + "metadata.json").read()
-        if let meta = try JSONSerialization.jsonObject(with: metadataData, options: []) as? [String: Any],
-           let packages = meta["packages"] as? [String: String] {
-            XCTAssertEqual(packages[fullTestRepo], testPackageDir, "Metadata mapping should still exist when package has remaining versions")
-        } else {
-            XCTFail("metadata.json could not be parsed")
-        }
+        XCTAssertEqual(try mint.readMetadata().packages, [fullTestRepo: testPackageDir])
     }
 }

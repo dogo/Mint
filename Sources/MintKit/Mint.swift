@@ -515,6 +515,13 @@ public class Mint {
             }
         }
     }
+    
+    private func isLikelySHA(_ value: String) -> Bool {
+        let minSHALength = 7
+        let hexSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        return value.count >= minSHALength &&
+               value.unicodeScalars.allSatisfy { hexSet.contains($0) }
+    }
 
     public func bootstrap(link: Bool = false, overwrite: Bool? = nil) throws {
 
@@ -612,21 +619,25 @@ public class Mint {
         // determine which version dirs to delete
         let versionDirsToDelete: [Cache.VersionDir]
         if let version = version {
-            // try exact match first
-            let matches = package.versionDirs.filter { $0.version == version }
-            if matches.isEmpty {
-                // fallback: contains (helps when user passes just a short sha / partial)
-                let fuzzy = package.versionDirs.filter { $0.version.contains(version) }
-                if fuzzy.isEmpty {
+            let exactMatches = package.versionDirs.filter { $0.version == version }
+
+            if !exactMatches.isEmpty {
+                versionDirsToDelete = exactMatches
+            } else if isLikelySHA(version) {
+                let shaMatches = package.versionDirs.filter { $0.version.hasPrefix(version) }
+
+                if shaMatches.isEmpty {
                     errorOutput("Version '\(version)' for package \(package.name) was not found".red)
                     return
-                } else {
-                    versionDirsToDelete = fuzzy
                 }
+
+                versionDirsToDelete = shaMatches
             } else {
-                versionDirsToDelete = matches
+                errorOutput("Version '\(version)' for package \(package.name) was not found".red)
+                return
             }
         } else {
+            // no version specified → uninstall all versions
             versionDirsToDelete = package.versionDirs
         }
 
