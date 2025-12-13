@@ -679,8 +679,17 @@ public class Mint {
 
         // remove resource artifact links related only to removed versions
         for resource in resources {
-            let installPath = linkPath + resource.lastComponent
-            try installPath.delete()
+            let resourceName = resource.lastComponent
+
+            let stillUsed = remainingVersionDirs.contains { versionDir in
+                let candidatePath = buildPath + versionDir + resourceName
+                return candidatePath.exists
+            }
+
+            if !stillUsed {
+                let installPath = linkPath + resourceName
+                try installPath.delete()
+            }
         }
     }
 }

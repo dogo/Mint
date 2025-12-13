@@ -327,7 +327,7 @@ class MintTests: XCTestCase {
         XCTAssertEqual(try mint.readMetadata().packages, [fullTestRepo: testPackageDir])
 
         // Perform uninstall for specific version
-        try mint.uninstall(name: testRepo, version: "4.0.0")
+        try mint.uninstall(name: testRepo, version: testVersion)
 
         // Assert: older version removed, newer version still present
         XCTAssertFalse((mintPath + "packages" + testPackageDir + "build" + testVersion).exists, "Requested version should be removed")
