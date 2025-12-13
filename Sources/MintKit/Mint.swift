@@ -644,9 +644,17 @@ public class Mint {
 
         // check if any version directories remain under build path
         let buildPath = package.path + "build"
-        let remainingVersionDirs = (try? buildPath.children()
-            .filter { $0.isDirectory && !$0.lastComponent.hasPrefix(".") }
-            .map { $0.lastComponent }) ?? []
+        var remainingVersionDirs: [String] = []
+        if buildPath.exists {
+            do {
+                remainingVersionDirs = try buildPath.children()
+                    .filter { $0.isDirectory && !$0.lastComponent.hasPrefix(".") }
+                    .map { $0.lastComponent }
+            } catch {
+                errorOutput("Failed to read build path '\(buildPath)': \(error)".red)
+                return
+            }
+        }
         let removedAllVersions = remainingVersionDirs.isEmpty
 
         if removedAllVersions {
