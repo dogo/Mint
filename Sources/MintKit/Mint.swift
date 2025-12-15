@@ -516,6 +516,9 @@ public class Mint {
         }
     }
     
+    /// Checks if a string is likely a Git SHA commit hash (heuristic: at least 7 hex characters).
+    /// - Parameter value: The string to check
+    /// - Returns: `true` if the string appears to be a SHA, `false` otherwise
     private func isLikelySHA(_ value: String) -> Bool {
         let minSHALength = 7
         let hexSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
@@ -627,7 +630,15 @@ public class Mint {
                 let shaMatches = package.versionDirs.filter { $0.version.hasPrefix(version) }
 
                 if shaMatches.isEmpty {
-                    errorOutput("Version '\(version)' for package \(package.name) was not found".red)
+                    errorOutput("SHA version '\(version)' for package \(package.name) was not found".red)
+                    return
+                }
+
+                // Warn if multiple versions match the SHA prefix to prevent accidental deletion
+                if shaMatches.count > 1 {
+                    let matchingVersions = shaMatches.map { $0.version }.joined(separator: ", ")
+                    errorOutput("SHA prefix '\(version)' matches multiple versions: \(matchingVersions)".yellow)
+                    errorOutput("Please provide a longer SHA prefix or the full SHA to uniquely identify the version.".yellow)
                     return
                 }
 
@@ -648,25 +659,27 @@ public class Mint {
                 .flatMap { $0 }
         )
 
-        // delete the selected version directories
-        for vd in versionDirsToDelete {
-            try vd.path.delete()
-        }
-
-        // check if any version directories remain under build path
+        // check if any version directories will remain after deletion (before deleting)
         let buildPath = package.path + "build"
         var remainingVersionDirs: [String] = []
+        let versionsToDelete = Set(versionDirsToDelete.map { $0.version })
         if buildPath.exists {
             do {
                 remainingVersionDirs = try buildPath.children()
                     .filter { $0.isDirectory && !$0.lastComponent.hasPrefix(".") }
                     .map { $0.lastComponent }
+                    .filter { !versionsToDelete.contains($0) }
             } catch {
                 errorOutput("Failed to read build path '\(buildPath)': \(error)".red)
                 return
             }
         }
         let removedAllVersions = remainingVersionDirs.isEmpty
+
+        // delete the selected version directories
+        for vd in versionDirsToDelete {
+            try vd.path.delete()
+        }
 
         if removedAllVersions {
             // fully removed package; ensure package path cleanup and metadata update
@@ -677,9 +690,9 @@ public class Mint {
             try writeMetadata(metadata)
         } else {
             // only specific version(s) removed
+            // metadata remains unchanged because package still has installed versions
             let removedVersionsList = versionDirsToDelete.map { $0.version }.joined(separator: ", ")
             output("\(package.name) (\(removedVersionsList)) was uninstalled")
-            // metadata remains unchanged because package still has installed versions
         }
 
         // remove links for executables belonging to removed versions

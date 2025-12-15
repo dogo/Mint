@@ -339,5 +339,97 @@ class MintTests: XCTestCase {
 
         // Metadata should still contain the package because a version remains
         XCTAssertEqual(try mint.readMetadata().packages, [fullTestRepo: testPackageDir])
+        
+        // Verify package list is updated correctly after uninstalling specific version
+        XCTAssertEqual(try mint.listPackages(), [fullTestRepo: [latestVersion]])
+    }
+    
+    func testUninstallSpecificVersionRemovesLastVersion() throws {
+        let globalPath = mint.linkPath + testCommand
+        let package = PackageReference(repo: testRepo, version: testVersion)
+
+        // install version
+        try mint.install(package: package, link: true)
+
+        // verify installed
+        XCTAssertTrue(globalPath.exists)
+        XCTAssertEqual(try mint.listPackages(), [fullTestRepo: [testVersion]])
+        XCTAssertEqual(try mint.readMetadata().packages, [fullTestRepo: testPackageDir])
+
+        // uninstall the only version
+        try mint.uninstall(name: testRepo, version: testVersion)
+
+        // verify package is completely removed
+        XCTAssertFalse(globalPath.exists)
+        XCTAssertEqual(mint.getLinkedExecutables(), [])
+        XCTAssertEqual(try mint.listPackages(), [:])
+        XCTAssertEqual(try mint.readMetadata().packages, [:])
+    }
+    
+    func testUninstallShaVersion() throws {
+        let shaVersion = "c3cf95c"
+        let package = PackageReference(repo: testRepo, version: shaVersion)
+        
+        // install SHA version (only this version)
+        try mint.install(package: package)
+        
+        // verify installed
+        XCTAssertTrue((mintPath + "packages" + testPackageDir + "build" + shaVersion).exists)
+        let installedPackages = try mint.listPackages()
+        XCTAssertEqual(installedPackages[fullTestRepo], [shaVersion])
+        
+        // uninstall using SHA prefix (removes the only version, so package should be completely removed)
+        try mint.uninstall(name: testRepo, version: shaVersion)
+        
+        // verify package is completely removed
+        XCTAssertFalse((mintPath + "packages" + testPackageDir + "build" + shaVersion).exists)
+        let remainingPackages = try mint.listPackages()
+        XCTAssertEqual(remainingPackages, [:])
+    }
+    
+    func testUninstallInvalidVersion() throws {
+        let package = PackageReference(repo: testRepo, version: testVersion)
+        
+        // install a version
+        try mint.install(package: package)
+        
+        // verify installed
+        let packagesBefore = try mint.listPackages()
+        XCTAssertEqual(packagesBefore[fullTestRepo], [testVersion])
+        
+        // try to uninstall non-existent version
+        try mint.uninstall(name: testRepo, version: "99.99.99")
+        
+        // verify nothing was removed (error should have prevented deletion)
+        let packagesAfter = try mint.listPackages()
+        XCTAssertEqual(packagesAfter[fullTestRepo], [testVersion])
+        XCTAssertTrue((mintPath + "packages" + testPackageDir + "build" + testVersion).exists)
+    }
+    
+    func testUninstallInvalidSha() throws {
+        let package = PackageReference(repo: testRepo, version: testVersion)
+        
+        // install a version
+        try mint.install(package: package)
+        
+        // verify installed
+        let packagesBefore = try mint.listPackages()
+        XCTAssertEqual(packagesBefore[fullTestRepo], [testVersion])
+        
+        // try to uninstall non-existent SHA
+        try mint.uninstall(name: testRepo, version: "abc1234")
+        
+        // verify nothing was removed (error should have prevented deletion)
+        let packagesAfter = try mint.listPackages()
+        XCTAssertEqual(packagesAfter[fullTestRepo], [testVersion])
+        XCTAssertTrue((mintPath + "packages" + testPackageDir + "build" + testVersion).exists)
+    }
+    
+    func testUninstallWhenNoVersionsInstalled() throws {
+        // try to uninstall a version when package is not installed at all
+        try mint.uninstall(name: testRepo, version: testVersion)
+        
+        // verify no error state (function should return gracefully)
+        XCTAssertEqual(try mint.listPackages(), [:])
     }
 }
