@@ -432,4 +432,38 @@ class MintTests: XCTestCase {
         // verify no error state (function should return gracefully)
         XCTAssertEqual(try mint.listPackages(), [:])
     }
+    
+    func testUninstallAmbiguousShaPrefix() throws {
+        // Install a SHA version
+        let shaVersion1 = "c3cf95c"
+        try mint.install(package: PackageReference(repo: testRepo, version: shaVersion1))
+        
+        // Create setup: two versions with same SHA prefix (neither exact match for the prefix)
+        let buildPath = mintPath + "packages" + testPackageDir + "build"
+        let firstVersionPath = buildPath + shaVersion1
+        let longerShaVersion1 = "c3cf95c0"
+        let longerFirstVersionPath = buildPath + longerShaVersion1
+        let shaVersion2 = "c3cf95c1234567890abcdef"
+        let secondVersionPath = buildPath + shaVersion2
+        
+        // Rename first version to be longer (so prefix isn't exact match)
+        try firstVersionPath.move(longerFirstVersionPath)
+        
+        // Create second version with same prefix
+        try secondVersionPath.mkpath()
+        let executable = try longerFirstVersionPath.children().first(where: { $0.isFile && $0.extension == nil })
+        if let executable = executable {
+            try executable.copy(secondVersionPath + executable.lastComponent)
+        }
+        
+        // Try to uninstall with prefix that matches both versions
+        try mint.uninstall(name: testRepo, version: "c3cf95c")
+        
+        // Verify no versions were deleted (ambiguous prefix should prevent deletion)
+        XCTAssertTrue(longerFirstVersionPath.exists)
+        XCTAssertTrue(secondVersionPath.exists)
+        
+        // Cleanup
+        try? secondVersionPath.delete()
+    }
 }
